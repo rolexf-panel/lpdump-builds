@@ -1,0 +1,291 @@
+name: Build and Release Android Tools
+
+on:
+  # Trigger saat push tag dengan format v*
+  push:
+    tags:
+      - 'v*'
+  
+  # Trigger manual dari GitHub UI
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v35.0.2)'
+        required: true
+        default: 'v35.0.2'
+      create_release:
+        description: 'Create GitHub Release'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  build-linux:
+    name: Build for Linux x86_64
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            cmake \
+            build-essential \
+            golang-go \
+            libusb-1.0-0-dev \
+            libpcre3-dev \
+            libgtest-dev \
+            libprotobuf-dev \
+            protobuf-compiler \
+            libbrotli-dev \
+            libzstd-dev \
+            liblz4-dev \
+            perl
+      
+      - name: Get android-tools version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Remove 'v' prefix jika ada
+          VERSION_NUM="${VERSION#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version_num=${VERSION_NUM}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION_NUM}"
+      
+      - name: Download android-tools source
+        run: |
+          wget https://github.com/nmeum/android-tools/releases/download/${{ steps.version.outputs.version_num }}/android-tools-${{ steps.version.outputs.version_num }}.tar.xz
+          tar -xf android-tools-${{ steps.version.outputs.version_num }}.tar.xz
+          cd android-tools-${{ steps.version.outputs.version_num }}
+      
+      - name: Build android-tools
+        run: |
+          cd android-tools-${{ steps.version.outputs.version_num }}
+          mkdir build && cd build
+          cmake -DCMAKE_INSTALL_PREFIX=/usr ..
+          make -j$(nproc)
+      
+      - name: Create installation directory
+        run: |
+          mkdir -p install-dir/usr/bin
+          cd android-tools-${{ steps.version.outputs.version_num }}/build
+          
+          # Copy binaries
+          cp adb/adb ../../../install-dir/usr/bin/
+          cp fastboot/fastboot ../../../install-dir/usr/bin/
+          cp mkbootimg/mkbootimg ../../../install-dir/usr/bin/
+          cp mkbootimg/unpack_bootimg ../../../install-dir/usr/bin/
+          cp mkbootimg/repack_bootimg ../../../install-dir/usr/bin/
+          cp mkbootimg/avbtool ../../../install-dir/usr/bin/
+          
+          # Copy lp* tools
+          if [ -f lpdump/lpdump ]; then
+            cp lpdump/lpdump ../../../install-dir/usr/bin/
+          fi
+          if [ -f lpmake/lpmake ]; then
+            cp lpmake/lpmake ../../../install-dir/usr/bin/
+          fi
+          if [ -f lpadd/lpadd ]; then
+            cp lpadd/lpadd ../../../install-dir/usr/bin/
+          fi
+          if [ -f lpunpack/lpunpack ]; then
+            cp lpunpack/lpunpack ../../../install-dir/usr/bin/
+          fi
+          if [ -f lpflash/lpflash ]; then
+            cp lpflash/lpflash ../../../install-dir/usr/bin/
+          fi
+          
+          # Copy other tools
+          if [ -f simg2img/simg2img ]; then
+            cp simg2img/simg2img ../../../install-dir/usr/bin/
+          fi
+          if [ -f img2simg/img2simg ]; then
+            cp img2simg/img2simg ../../../install-dir/usr/bin/
+          fi
+          if [ -f append2simg/append2simg ]; then
+            cp append2simg/append2simg ../../../install-dir/usr/bin/
+          fi
+          if [ -f mkdtboimg/mkdtboimg ]; then
+            cp mkdtboimg/mkdtboimg ../../../install-dir/usr/bin/
+          fi
+          if [ -f mke2fs/mke2fs.android ]; then
+            cp mke2fs/mke2fs.android ../../../install-dir/usr/bin/
+          fi
+      
+      - name: Strip binaries
+        run: |
+          strip install-dir/usr/bin/*
+      
+      - name: Create README
+        run: |
+          cat > install-dir/README.md << 'EOF'
+          # Android Tools Binaries for Linux x86_64
+          
+          ## Installation
+          
+          ```bash
+          # Extract archive
+          tar -xzf android-tools-linux-x86_64.tar.gz
+          
+          # Copy binaries to /usr/local/bin
+          sudo cp usr/bin/* /usr/local/bin/
+          
+          # Or add to PATH
+          export PATH="$PWD/usr/bin:$PATH"
+          ```
+          
+          ## Included Tools
+          
+          - **adb**: Android Debug Bridge
+          - **fastboot**: Flash/boot images to Android devices
+          - **lpdump**: Dump logical partition metadata
+          - **lpmake**: Create logical partition images
+          - **lpadd**: Add partitions to super image
+          - **lpunpack**: Extract partitions from super image
+          - **lpflash**: Flash logical partitions
+          - **mkbootimg**: Create Android boot images
+          - **unpack_bootimg**: Extract boot image components
+          - **repack_bootimg**: Repack boot images
+          - **avbtool**: Android Verified Boot tool
+          - **simg2img**: Convert sparse to raw image
+          - **img2simg**: Convert raw to sparse image
+          - **mke2fs.android**: Create ext4 filesystem for Android
+          
+          ## Usage Examples
+          
+          ### lpdump
+          ```bash
+          lpdump super.img
+          lpdump --json super.img > metadata.json
+          ```
+          
+          ### lpunpack
+          ```bash
+          lpunpack super.img output_dir/
+          ```
+          
+          ### adb
+          ```bash
+          adb devices
+          adb shell
+          ```
+          
+          ### fastboot
+          ```bash
+          fastboot devices
+          fastboot flash boot boot.img
+          ```
+          
+          ## Requirements
+          
+          - Linux x86_64
+          - libusb
+          - libprotobuf
+          - libbrotli
+          - libzstd
+          - liblz4
+          
+          Install dependencies (Ubuntu/Debian):
+          ```bash
+          sudo apt install libusb-1.0-0 libprotobuf23 libbrotli1 libzstd1 liblz4-1
+          ```
+          
+          ## Source
+          
+          Built from: https://github.com/nmeum/android-tools
+          EOF
+      
+      - name: Create tarball
+        run: |
+          cd install-dir
+          tar -czf ../android-tools-linux-x86_64-${{ steps.version.outputs.version_num }}.tar.gz *
+          cd ..
+          
+          # Create checksums
+          sha256sum android-tools-linux-x86_64-${{ steps.version.outputs.version_num }}.tar.gz > checksums.txt
+      
+      - name: List built binaries
+        run: |
+          echo "Built binaries:"
+          ls -lh install-dir/usr/bin/
+          echo ""
+          echo "Archive:"
+          ls -lh android-tools-linux-x86_64-*.tar.gz
+          echo ""
+          echo "SHA256 checksums:"
+          cat checksums.txt
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-tools-linux-x86_64
+          path: |
+            android-tools-linux-x86_64-${{ steps.version.outputs.version_num }}.tar.gz
+            checksums.txt
+      
+      - name: Create Release
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Android Tools ${{ steps.version.outputs.version_num }}
+          body: |
+            ## Android Tools ${{ steps.version.outputs.version_num }} - Linux x86_64 Binaries
+            
+            Precompiled binaries untuk Linux x86_64.
+            
+            ### 📦 Download
+            - **android-tools-linux-x86_64-${{ steps.version.outputs.version_num }}.tar.gz**: Semua binaries
+            - **checksums.txt**: SHA256 checksums
+            
+            ### ✨ Included Tools
+            - adb, fastboot
+            - lpdump, lpmake, lpadd, lpunpack, lpflash
+            - mkbootimg, unpack_bootimg, repack_bootimg, avbtool
+            - simg2img, img2simg, append2simg
+            - mke2fs.android, mkdtboimg
+            
+            ### 📥 Installation
+            ```bash
+            # Download dan extract
+            tar -xzf android-tools-linux-x86_64-${{ steps.version.outputs.version_num }}.tar.gz
+            
+            # Copy ke system
+            sudo cp usr/bin/* /usr/local/bin/
+            
+            # Atau tambahkan ke PATH
+            export PATH="$PWD/usr/bin:$PATH"
+            ```
+            
+            ### 📋 Requirements
+            ```bash
+            sudo apt install libusb-1.0-0 libprotobuf23 libbrotli1 libzstd1 liblz4-1
+            ```
+            
+            ### 🔍 Verify
+            ```bash
+            lpdump --help
+            adb version
+            fastboot --version
+            ```
+            
+            **Source**: https://github.com/nmeum/android-tools/releases/tag/${{ steps.version.outputs.version_num }}
+            
+            ---
+            
+            Built automatically by GitHub Actions.
+          files: |
+            android-tools-linux-x86_64-${{ steps.version.outputs.version_num }}.tar.gz
+            checksums.txt
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

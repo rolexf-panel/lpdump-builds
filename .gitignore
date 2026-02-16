@@ -1,0 +1,32 @@
+# Build artifacts
+*.tar.gz
+*.tar.xz
+*.zip
+android-tools-*/
+install-dir/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+*~
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
