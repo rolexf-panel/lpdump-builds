@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g., v35.0.2)'
+        description: 'Version tag (e.g., v35.0.2) - check https://github.com/nmeum/android-tools/releases'
         required: true
         default: 'v35.0.2'
       create_release:
@@ -36,7 +36,6 @@ jobs:
             cmake \
             build-essential \
             golang-go \
-            libusb-1.0-0-dev \
             libpcre3-dev \
             libgtest-dev \
             libprotobuf-dev \
@@ -45,6 +44,7 @@ jobs:
             libzstd-dev \
             liblz4-dev \
             libfmt-dev \
+            libudev-dev \
             perl
       
       - name: Get android-tools version
@@ -61,6 +61,23 @@ jobs:
           echo "version_num=${VERSION_NUM}" >> $GITHUB_OUTPUT
           echo "Building version: ${VERSION_NUM}"
       
+      - name: Verify version exists upstream
+        run: |
+          VERSION_NUM="${{ steps.version.outputs.version_num }}"
+          echo "Checking if version ${VERSION_NUM} exists in upstream..."
+          if ! wget --spider "https://github.com/nmeum/android-tools/releases/download/${VERSION_NUM}/android-tools-${VERSION_NUM}.tar.xz" 2>&1 | grep -q '200 OK'; then
+            echo "ERROR: Version ${VERSION_NUM} not found in upstream repository!"
+            echo "Available versions: https://github.com/nmeum/android-tools/releases"
+            echo ""
+            echo "Latest known versions:"
+            echo "  - 35.0.2 (latest)"
+            echo "  - 35.0.1"
+            echo "  - 34.0.5"
+            echo "  - 34.0.4"
+            exit 1
+          fi
+          echo "Version ${VERSION_NUM} verified successfully"
+      
       - name: Download android-tools source
         run: |
           wget https://github.com/nmeum/android-tools/releases/download/${{ steps.version.outputs.version_num }}/android-tools-${{ steps.version.outputs.version_num }}.tar.xz
@@ -71,7 +88,11 @@ jobs:
         run: |
           cd android-tools-${{ steps.version.outputs.version_num }}
           mkdir build && cd build
-          cmake -DCMAKE_INSTALL_PREFIX=/usr ..
+          cmake -DCMAKE_INSTALL_PREFIX=/usr \
+                -DUSE_SYSTEM_LIBUSB=OFF \
+                -DUSE_BUNDLED_LIBUSB=ON \
+                -DLIBUSB_ENABLE_UDEV=ON \
+                ..
           make -j$(nproc)
       
       - name: Create installation directory
@@ -79,46 +100,46 @@ jobs:
           mkdir -p install-dir/usr/bin
           cd android-tools-${{ steps.version.outputs.version_num }}/build
           
-          # Copy binaries
-          cp adb/adb ../../../install-dir/usr/bin/
-          cp fastboot/fastboot ../../../install-dir/usr/bin/
-          cp mkbootimg/mkbootimg ../../../install-dir/usr/bin/
-          cp mkbootimg/unpack_bootimg ../../../install-dir/usr/bin/
-          cp mkbootimg/repack_bootimg ../../../install-dir/usr/bin/
-          cp mkbootimg/avbtool ../../../install-dir/usr/bin/
+          # Copy binaries (they're in subdirectories of build/)
+          cp adb/adb ../../install-dir/usr/bin/
+          cp fastboot/fastboot ../../install-dir/usr/bin/
+          cp mkbootimg/mkbootimg ../../install-dir/usr/bin/
+          cp mkbootimg/unpack_bootimg ../../install-dir/usr/bin/
+          cp mkbootimg/repack_bootimg ../../install-dir/usr/bin/
+          cp mkbootimg/avbtool ../../install-dir/usr/bin/
           
           # Copy lp* tools
           if [ -f lpdump/lpdump ]; then
-            cp lpdump/lpdump ../../../install-dir/usr/bin/
+            cp lpdump/lpdump ../../install-dir/usr/bin/
           fi
           if [ -f lpmake/lpmake ]; then
-            cp lpmake/lpmake ../../../install-dir/usr/bin/
+            cp lpmake/lpmake ../../install-dir/usr/bin/
           fi
           if [ -f lpadd/lpadd ]; then
-            cp lpadd/lpadd ../../../install-dir/usr/bin/
+            cp lpadd/lpadd ../../install-dir/usr/bin/
           fi
           if [ -f lpunpack/lpunpack ]; then
-            cp lpunpack/lpunpack ../../../install-dir/usr/bin/
+            cp lpunpack/lpunpack ../../install-dir/usr/bin/
           fi
           if [ -f lpflash/lpflash ]; then
-            cp lpflash/lpflash ../../../install-dir/usr/bin/
+            cp lpflash/lpflash ../../install-dir/usr/bin/
           fi
           
           # Copy other tools
           if [ -f simg2img/simg2img ]; then
-            cp simg2img/simg2img ../../../install-dir/usr/bin/
+            cp simg2img/simg2img ../../install-dir/usr/bin/
           fi
           if [ -f img2simg/img2simg ]; then
-            cp img2simg/img2simg ../../../install-dir/usr/bin/
+            cp img2simg/img2simg ../../install-dir/usr/bin/
           fi
           if [ -f append2simg/append2simg ]; then
-            cp append2simg/append2simg ../../../install-dir/usr/bin/
+            cp append2simg/append2simg ../../install-dir/usr/bin/
           fi
           if [ -f mkdtboimg/mkdtboimg ]; then
-            cp mkdtboimg/mkdtboimg ../../../install-dir/usr/bin/
+            cp mkdtboimg/mkdtboimg ../../install-dir/usr/bin/
           fi
           if [ -f mke2fs/mke2fs.android ]; then
-            cp mke2fs/mke2fs.android ../../../install-dir/usr/bin/
+            cp mke2fs/mke2fs.android ../../install-dir/usr/bin/
           fi
       
       - name: Strip binaries
